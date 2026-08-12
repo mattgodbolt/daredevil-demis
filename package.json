@@ -1,0 +1,13 @@
+{
+  "name": "daredevil-demis",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Test harness for the BBC Micro game DAREDEVIL DEMIS, driving jsbeeb over MCP",
+  "scripts": {
+    "test": "node tools/autopilot.mjs build/demis.ssd 8000"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
