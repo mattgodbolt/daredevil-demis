@@ -6,6 +6,13 @@ Theme-Park-designing, recently-promoted-sideways AI researcher.
 
 > Step one, solve intelligence. Step two, jump over it.
 
+### ▶ [**Play it in your browser**](https://bbc.xania.org/?disc=https://raw.githubusercontent.com/mattgodbolt/daredevil-demis/main/daredevil-demis.ssd&autoboot)
+
+That link hands [jsbeeb](https://github.com/mattgodbolt/jsbeeb) the disc image
+straight from this repo's raw URL — which serves
+`access-control-allow-origin: *`, so no download and no proxy — and autoboots
+it on a BBC B with DFS 1.2.
+
 ![Title screen](docs/img/title.png)
 
 Four shoots. Four platforms each. Three controls. One stuntman whose employer
@@ -13,9 +20,9 @@ has just restructured him into a chairmanship.
 
 ## Playing it
 
-Grab [`daredevil-demis.ssd`](daredevil-demis.ssd) and drop it into any BBC Micro emulator
-([jsbeeb](https://bbc.godbolt.org/) will do), or `*RUN Code` from the disc.
-It autoboots on SHIFT+BREAK.
+[Play it in your browser](https://bbc.xania.org/?disc=https://raw.githubusercontent.com/mattgodbolt/daredevil-demis/main/daredevil-demis.ssd&autoboot), or grab
+[`daredevil-demis.ssd`](daredevil-demis.ssd) and drop it into any BBC Micro
+emulator. It autoboots on SHIFT+BREAK, or `*RUN Code` from the disc.
 
 | Key      | Does                                     |
 |----------|------------------------------------------|

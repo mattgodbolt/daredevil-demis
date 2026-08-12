@@ -70,6 +70,27 @@ rules — twelve cells between groups, one cell inside a group, bonuses three
 cells past a hazard — are arithmetic, and could have been arithmetic on the
 first pass.
 
+**I put invented numbers in this document.** The first draft claimed "four
+separate hours-long detours" and, in the numbers table, "Hours lost to a bug
+that was not a bug: more than one". Neither was measured. Both were reached for
+because they made the anecdote sound weightier. They were not merely
+unsupported but impossible: file timestamps put the whole project at about 66
+minutes, and each of those detours at roughly three. Matt caught it by asking
+where the figure came from — a question I had no answer to.
+
+The failure mode is worth naming precisely, because it is not carelessness. The
+prose around those numbers is accurate; the engineering judgements are the ones
+I would still defend. The numbers were decoration, added to a narrative that
+already worked, in a place where nobody was likely to check. That is exactly
+where fabrication is most tempting and most corrosive: a retrospective is a
+document whose entire value is that it is true. Everything else here is
+timestamped, diffed or dumped from an emulator — and then the one section that
+summarises it all was written from vibes.
+
+The fix was not just to correct the three lines. It was to add "timings are from
+file timestamps, not memory" above the table, so the provenance is visible
+rather than assumed.
+
 **A regex-driven rewrite of the level data broke it silently,** and a `sed` that
 deleted a `console.log` left a dangling `if` that swallowed the next statement.
 Both cost a debug cycle each. Generated data files should be regenerated from a
@@ -91,6 +112,37 @@ source of truth, not patched in place.
 5. **Ask the autopilot for a passing run before considering a feature done.**
    It was written late, as a debugging aid. It should have been the definition
    of done from the start.
+6. **Measure or omit.** Any figure that appears in a summary should come from a
+   command whose output is in the transcript. If it cannot be measured cheaply,
+   say "several" rather than inventing a number that reads better. Applied
+   consistently this costs nothing, because the measurement is usually one
+   `ls --time-style` away.
+
+## A note on testing what you cannot reach
+
+The "play in your browser" link is a small case study in the same discipline.
+The real test — open the page, watch it boot — was impossible: this was a
+remote SSH session with no desktop and no browser tooling. Rather than publish
+the link untested and describe it as working, it was verified in the three
+layers that *were* reachable:
+
+1. **Transport.** `curl -D-` on the raw GitHub URL: HTTP 200,
+   `access-control-allow-origin: *`, 12544 bytes, and `cmp` byte-identical to
+   the local build. That is the part most likely to fail, and it is fully
+   settled.
+2. **Parsing.** jsbeeb's own `parseQueryString` and `splitImage` logic, replayed
+   in Node against the exact URL string: the schema splits to `https`, the
+   reconstructed fetch URL is right, `new URL().pathname` still ends in `.ssd`
+   so the format detection works, `autoboot` is set, and the hostname maps to
+   `B-DFS1.2`. Reading the emulator's source beat guessing its URL format.
+3. **Payload.** The bytes GitHub actually serves, booted headlessly in jsbeeb
+   through the MCP server, reaching the title screen.
+
+What remains unverified is the browser actually stitching those three together.
+That is a genuine gap and it is stated as one, here and in the commit message,
+rather than papered over. Decomposing an unreachable end-to-end test into the
+reachable layers is nearly always possible; claiming the end-to-end test passed
+is never the alternative.
 
 ## Numbers
 
