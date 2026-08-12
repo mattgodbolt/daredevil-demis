@@ -13,7 +13,7 @@ has just restructured him into a chairmanship.
 
 ## Playing it
 
-Grab `build/demis.ssd` and drop it into any BBC Micro emulator
+Grab [`daredevil-demis.ssd`](daredevil-demis.ssd) and drop it into any BBC Micro emulator
 ([jsbeeb](https://bbc.godbolt.org/) will do), or `*RUN Code` from the disc.
 It autoboots on SHIFT+BREAK.
 
