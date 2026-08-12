@@ -41,19 +41,20 @@ dying.
 
 ## What went badly
 
-**Four separate hours-long detours came from not knowing the hardware well
-enough.** The palette (`VDU 19` versus poking `&FE21` in a four-colour mode),
+**Four separate detours came from not knowing the hardware well enough.** The palette (`VDU 19` versus poking `&FE21` in a four-colour mode),
 `OSBYTE` not preserving `X`, zero-page aliasing between `tmp1+1` and `tmp2`,
 and the five-cell blit running off the right-hand edge. Each looked like a
 different bug — a corrupt framebuffer, a hang, wrong lane positions, a stray
-sprite — and each was a platform detail. The lesson is not "read more docs
+sprite — and each was a platform detail. None took more than about three
+minutes to find once state was dumped; the cost was that there were four of
+them, in a session only an hour long. The lesson is not "read more docs
 first"; it is that on unfamiliar hardware, *the first divergence from expected
 output should be investigated by dumping state, not by re-reading the code.*
 The palette bug was found in one call once the screen memory was dumped and
 turned out to be **correct** — which immediately said "the problem is the ULA,
 not the drawing".
 
-**Chasing a bug that did not exist.** Considerable time went on "the rider is
+**Chasing a bug that did not exist.** Three minutes went on "the rider is
 invisible mid-jump", checking the pre-shift tables byte by byte and proving all
 four phases were correct. The sprite was fine. `run_for_cycles(0.12s)` is
 exactly six frames at 2MHz, so every sample landed at the identical point in
@@ -93,11 +94,14 @@ source of truth, not patched in place.
 
 ## Numbers
 
+Timings are from file timestamps, not memory.
+
 | | |
 |---|---|
+| Wall clock, first command to final push | ~66 minutes |
 | 6502 source | ~3,900 lines across 7 files |
 | Sprites | 26, hand-drawn as ASCII, generated to 128 bytes each |
 | Disc image | 12.5K |
-| Emulator runs during development | several dozen, all headless |
+| Screenshots and screen dumps captured | 46, all headless |
 | Real bugs found by the autopilot | 3 |
-| Hours lost to a bug that was not a bug | more than one |
+| Longest single detour (the palette, the aliasing, the non-bug) | ~3 minutes each |
