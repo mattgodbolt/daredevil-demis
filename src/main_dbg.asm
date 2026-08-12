@@ -1,4 +1,5 @@
 SHOOT_NO = 0
+RASTER_DEBUG = FALSE
 \ Debug build: drops straight into a shoot, skipping the front end.
 \ Pick the shoot with SHOOT_NO on the beebasm command line (-D not supported,
 \ so edit here), then: beebasm -i src/main_dbg.asm -do build/dbg.ssd -boot Code -opt 3
@@ -21,6 +22,7 @@ INCLUDE "src/titles.asm"
     LDA #5:  JSR OSWRCH
     LDA #229: LDX #1: LDY #0
     JSR OSBYTE
+    JSR install_irq
     JSR sfx_init
     LDA #&7B: STA seed
     JSR new_game

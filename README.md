@@ -120,9 +120,19 @@ MODE 5 — 160×256, four colours, 10K of screen at `&5800`. The code lives at
   blit is `screen = (screen AND mask) OR data` with no table lookup in the
   inner loop. The rider's two frames are pre-shifted into four pixel phases at
   the start of each shoot, which buys smooth horizontal movement for 1280 bytes.
-- **Redraw** saves the background under each sprite, and restores it from the
-  address it was actually drawn at — so the whole update can happen *before*
-  the vsync wait, leaving only the erase between vsync and the redraw.
+- **Redraw** saves the background under each sprite and restores it from the
+  address it was actually drawn at, so the whole update happens before the
+  vsync. Every background is saved before anything is drawn — otherwise the
+  second sprite saves the first one's pixels and smears a copy of it down the
+  track. The blitter unrolls a character row at a time and patches its own
+  operands once per sprite; the whole redraw costs about 82 scanlines.
+- **No OS in the game loop.** `OSWRCH` costs more than a frame for a status
+  bar, so text is plotted straight from the MOS font at `&C000`; and `OSBYTE
+  19` returns too late to be a vsync, so the engine hooks `IRQ1V` and counts
+  them itself. Since the redraw is longer than the vertical border, it waits
+  for the beam to drop *below* the lane it is about to repaint — so the rider
+  is painted every frame on every lane, rather than a third of the time on the
+  top one.
 - **Physics** is 8.8 fixed point: 1.25 px/frame flat out, a 4 px/frame jump
   against 0.25 gravity, and a constant drag so you always coast to a halt. That
   is a 32-pixel-high, 42-pixel-long leap that shelters about 33 pixels of

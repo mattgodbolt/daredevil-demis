@@ -6,6 +6,33 @@
 \ the next one down. Three controls only: accelerate, brake, jump.
 \ ============================================================================
 
+\ --- Blit primitives -------------------------------------------------------
+MACRO DRAW_CELL ofs
+    LDY #ofs
+    LDA &FFFF,X                 \ data  (operand patched)
+    STA sd
+    INX
+    LDA &FFFF,X                 \ mask  (operand patched)
+    INX
+    AND (scrp),Y
+    ORA sd
+    STA (scrp),Y
+ENDMACRO
+
+MACRO GRAB_CELL ofs
+    LDY #ofs
+    LDA (scrp),Y
+    STA &FFFF,X                 \ operand patched
+    INX
+ENDMACRO
+
+MACRO WRITE_CELL ofs
+    LDY #ofs
+    LDA &FFFF,X                 \ operand patched
+    STA (scrp),Y
+    INX
+ENDMACRO
+
 \ --- Zero page -------------------------------------------------------------
 scrp    = &70       \ 2: screen address of the current sprite row
 sprp    = &72       \ 2: source sprite data
@@ -21,6 +48,9 @@ blitw   = &7E       \ bytes per sprite row: 4 aligned, 5 for the shifted player
 seed    = &7F
 ig_ptr  = &80       \ 2: gap-list cursor
 dptr    = &82       \ 2: cell cursor while painting scenery
+txtp    = &84       \ 2: left half of the character being plotted
+txtp2   = &86       \ 2: right half
+fontp   = &88       \ 2: MOS font cursor
 strp    = &90       \ 2: shared with titles.asm print_str
 
 \ --- Tuning ----------------------------------------------------------------
@@ -49,6 +79,7 @@ KEY_QUIT  = &8F     \ ESCAPE (-113)
     LDA #5:  JSR OSWRCH
     LDA #229: LDX #1: LDY #0    \ ESCAPE becomes an ordinary key
     JSR OSBYTE
+    JSR install_irq
     JSR sfx_init
     LDA #&7B: STA seed
 
@@ -533,77 +564,114 @@ BONUS_OFF = 16                  \ bonuses float, so you have to jump for them
 \ ============================================================================
 \ Sprite blitting.  Source is interleaved (data, mask) pairs; the blit is
 \ screen = (screen AND mask) OR data.
-\ Inputs: sprp, scrp, subrow, blitw
+\
+\ These three routines are the whole frame budget. The rolled-up version cost
+\ ~45 cycles a byte, which put the redraw 21000 cycles long -- two thirds of
+\ the visible screen -- so anything in the top two lanes was erased before the
+\ beam arrived and redrawn after it had gone. Unrolling one character row at a
+\ time gets the whole redraw inside the vertical border, where nobody can see
+\ it happen.
+\
+\ Registers: X indexes the sprite (or the save buffer) and rises monotonically,
+\ so the operand of every unrolled load is patched once per sprite, not per
+\ row. Y holds the screen offset, an immediate per unrolled cell.
+\ Inputs: sprp, scrp, subrow, blitw (4 or 5)
 \ ============================================================================
+
+
 .draw_masked
-    LDA sprp:   STA dm_src1+1: STA dm_src2+1
-    LDA sprp+1: STA dm_src1+2: STA dm_src2+2
+    JSR dm_patch                \ point the unrolled loads at this sprite
     LDX #0
     LDA #SPR_H: STA rowcnt
 .dm_row
-    LDY #0
-    LDA blitw: STA tmp0
-.dm_byte
-.dm_src1
-    LDA &FFFF,X
-    STA sd
-    INX
-.dm_src2
-    LDA &FFFF,X
-    INX
-    AND (scrp),Y
-    ORA sd
-    STA (scrp),Y
-    TYA: CLC: ADC #8: TAY
-    DEC tmp0
-    BNE dm_byte
+.dm_c0
+    DRAW_CELL 0
+.dm_c1
+    DRAW_CELL 8
+.dm_c2
+    DRAW_CELL 16
+.dm_c3
+    DRAW_CELL 24
+    LDA blitw
+    CMP #5
+    BNE dm_narrow
+.dm_c4
+    DRAW_CELL 32
+.dm_narrow
     JSR next_row
     DEC rowcnt
     BNE dm_row
     RTS
 
+.dm_patch
+    LDA sprp:   STA dm_c0+3: STA dm_c0+9:  STA dm_c1+3: STA dm_c1+9
+    STA dm_c2+3: STA dm_c2+9:  STA dm_c3+3: STA dm_c3+9
+    STA dm_c4+3: STA dm_c4+9
+    LDA sprp+1: STA dm_c0+4: STA dm_c0+10: STA dm_c1+4: STA dm_c1+10
+    STA dm_c2+4: STA dm_c2+10: STA dm_c3+4: STA dm_c3+10
+    STA dm_c4+4: STA dm_c4+10
+    RTS
+
+
 \ Copy the screen under a sprite into bufp.
 .save_bg
-    LDA bufp:   STA sb_dst+1
-    LDA bufp+1: STA sb_dst+2
+    JSR sb_patch
     LDX #0
     LDA #SPR_H: STA rowcnt
 .sb_row
-    LDY #0
-    LDA blitw: STA tmp0
-.sb_byte
-    LDA (scrp),Y
-.sb_dst
-    STA &FFFF,X
-    INX
-    TYA: CLC: ADC #8: TAY
-    DEC tmp0
-    BNE sb_byte
+.sb_c0
+    GRAB_CELL 0
+.sb_c1
+    GRAB_CELL 8
+.sb_c2
+    GRAB_CELL 16
+.sb_c3
+    GRAB_CELL 24
+    LDA blitw
+    CMP #5
+    BNE sb_narrow
+.sb_c4
+    GRAB_CELL 32
+.sb_narrow
     JSR next_row
     DEC rowcnt
     BNE sb_row
     RTS
 
+.sb_patch
+    LDA bufp:   STA sb_c0+5: STA sb_c1+5: STA sb_c2+5: STA sb_c3+5: STA sb_c4+5
+    LDA bufp+1: STA sb_c0+6: STA sb_c1+6: STA sb_c2+6: STA sb_c3+6: STA sb_c4+6
+    RTS
+
+
 \ Put it back.
 .restore_bg
-    LDA bufp:   STA rb_src+1
-    LDA bufp+1: STA rb_src+2
+    JSR rb_patch
     LDX #0
     LDA #SPR_H: STA rowcnt
 .rb_row
-    LDY #0
-    LDA blitw: STA tmp0
-.rb_byte
-.rb_src
-    LDA &FFFF,X
-    STA (scrp),Y
-    INX
-    TYA: CLC: ADC #8: TAY
-    DEC tmp0
-    BNE rb_byte
+.rb_c0
+    WRITE_CELL 0
+.rb_c1
+    WRITE_CELL 8
+.rb_c2
+    WRITE_CELL 16
+.rb_c3
+    WRITE_CELL 24
+    LDA blitw
+    CMP #5
+    BNE rb_narrow
+.rb_c4
+    WRITE_CELL 32
+.rb_narrow
     JSR next_row
     DEC rowcnt
     BNE rb_row
+    RTS
+
+.rb_patch
+    LDA bufp:   STA rb_c0+3: STA rb_c1+3: STA rb_c2+3: STA rb_c3+3: STA rb_c4+3
+    LDA bufp+1: STA rb_c0+4: STA rb_c1+4: STA rb_c2+4: STA rb_c3+4: STA rb_c4+4
     RTS
 
 \ Blank a 4-cell by 16-row area (used when a bonus is collected).
@@ -746,9 +814,16 @@ FLAG_QUIT      = 3
     BNE fr_skip_collide
     JSR collide
 .fr_skip_collide
-    LDA #19: JSR OSBYTE         \ wait for vsync, then repaint in the border
+    JSR wait_vsync              \ our own vsync, not the OS's
+    JSR wait_past_lane          \ ...then let the beam clear this lane
+IF RASTER_DEBUG
+    LDA #1: JSR raster_mark     \ paint the screen red while the sprites are
+ENDIF
     JSR restore_all
     JSR save_all
+IF RASTER_DEBUG
+    LDA #0: JSR raster_mark     \ ...being redrawn: the band shows the cost
+ENDIF
     \ Give the engine note the whole speed range, not just its integer part.
     LDA sp_lo
     LSR A
@@ -763,6 +838,85 @@ FLAG_QUIT      = 3
     ORA tmp0
     JSR sfx_engine
     RTS
+
+IF RASTER_DEBUG
+\ Flood every palette entry with one physical colour, so the time between two
+\ calls shows up as a coloured band down the screen: a raster bar.
+.raster_mark
+    EOR #7
+    STA rm_col
+    LDX #15
+.rm_loop
+    TXA
+    ASL A: ASL A: ASL A: ASL A
+    ORA rm_col
+    STA &FE21
+    DEX
+    BPL rm_loop
+    RTS
+.rm_col EQUB 0
+ENDIF
+
+IRQ1V   = &0204
+VIA_IFR = &FE4D
+
+\ OSBYTE 19 goes through the OS's event dispatch and does not return until the
+\ beam is already ~22 lines into the display, which throws away the whole
+\ vertical border -- the only time in the frame when it is safe to redraw
+\ anything. So we hook IRQ1V ourselves, count vsyncs, and chain to whatever
+\ was there before. A handler on IRQ1V may use A (the OS has already saved it
+\ at &FC) but must leave X and Y alone.
+.install_irq
+    SEI
+    LDA IRQ1V:   STA old_irq
+    LDA IRQ1V+1: STA old_irq+1
+    LDA #LO(our_irq): STA IRQ1V
+    LDA #HI(our_irq): STA IRQ1V+1
+    CLI
+    RTS
+
+.our_irq
+    LDA VIA_IFR
+    AND #2                      \ bit 1 = vsync
+    BEQ our_irq_chain
+    INC vsync_count
+.our_irq_chain
+    JMP (old_irq)
+
+.wait_vsync
+    LDA vsync_count
+.wv_spin
+    CMP vsync_count
+    BEQ wv_spin
+    RTS
+
+.old_irq     EQUW 0
+.vsync_count EQUB 0
+
+\ Even off our own vsync the redraw is longer than the vertical border, and the
+\ redraw takes some 80 lines -- so anything in the top lane would be erased
+\ ahead of the beam and redrawn behind it, and never appear at all. Instead we
+\ let the beam get past the lane we are about to redraw; by the time it comes
+\ round again the new frame is sitting there waiting for it. Lanes 2 and 3 are
+\ already below the redraw window, so they wait for nothing.
+.wait_past_lane
+    LDX lane
+    LDA lane_delay,X
+    BEQ wpl_done
+    TAX
+.wpl_row
+    LDY #25                     \ 25 * 5 = 125 cycles, near enough one 128-cycle line
+.wpl_inner
+    DEY
+    BNE wpl_inner
+    DEX
+    BNE wpl_row
+.wpl_done
+    RTS
+
+\ Scanlines to wait before redrawing, per lane.
+.lane_delay
+    EQUB 75, 131, 0, 0
 
 .read_keys
     LDX #KEY_JUMP: JSR keydown
@@ -889,9 +1043,16 @@ FLAG_QUIT      = 3
     BEQ up_rdone
     DEC review
 .up_rdone
+    \ Only repaint the status bar when the reviewer's bar actually changes.
+    \ Testing `review AND 7` looked cheap but is zero every frame once review
+    \ falls back to 0 -- which is the normal case while moving -- so this was
+    \ running thirty-odd OSWRCH calls per frame, overrunning the frame and
+    \ dropping the whole game to 25Hz.
     LDA review
-    AND #7
-    BNE up_nodraw
+    LSR A: LSR A: LSR A: LSR A: LSR A
+    CMP last_bar
+    BEQ up_nodraw
+    STA last_bar
     JSR draw_status
 .up_nodraw
     RTS
@@ -974,7 +1135,17 @@ FLAG_QUIT      = 3
 \ Drawing everything that moves
 \ ============================================================================
 .save_all
-    \ Movers first, rider last, so the rider is drawn on top.
+    \ Two passes. Pass one captures the background under every sprite BEFORE
+    \ anything is drawn -- otherwise the second sprite saves the first sprite's
+    \ pixels and smears a copy of it across the track next frame.
+    \ Pass two draws, rider first, because the beam is chasing us down the
+    \ screen and he is the thing you actually watch.
+    JSR player_setup
+    LDA scrp:   STA pl_scrp
+    LDA scrp+1: STA pl_scrp+1
+    LDA subrow: STA pl_subrow
+    JSR save_bg
+
     LDX #0
 .sa_next
     STX sa_slot
@@ -987,7 +1158,20 @@ FLAG_QUIT      = 3
     LDA scrp+1: STA mv_scrp_hi,X
     LDA subrow: STA mv_subrow,X
     JSR save_bg
+.sa_skip
     LDX sa_slot
+    INX
+    CPX #NMOVERS
+    BNE sa_next
+
+    JSR player_setup_scrp_only
+    JSR draw_masked
+
+    LDX #0
+.sd_next
+    STX sa_slot
+    LDA mv_drawn,X
+    BEQ sd_skip
     LDA mv_spr,X
     TAX
     LDA sprite_lo,X: STA sprp
@@ -995,18 +1179,11 @@ FLAG_QUIT      = 3
     LDX sa_slot
     JSR mover_setup_scrp_only
     JSR draw_masked
-.sa_skip
+.sd_skip
     LDX sa_slot
     INX
     CPX #NMOVERS
-    BNE sa_next
-    JSR player_setup
-    LDA scrp:   STA pl_scrp
-    LDA scrp+1: STA pl_scrp+1
-    LDA subrow: STA pl_subrow
-    JSR save_bg
-    JSR player_setup_scrp_only
-    JSR draw_masked
+    BNE sd_next
     RTS
 .sa_slot EQUB 0
 
@@ -1279,44 +1456,159 @@ FLAG_QUIT      = 3
     RTS
 
 \ ============================================================================
+\ Text
+\ ============================================================================
+\ OSWRCH is far too slow for the game loop -- thirty-odd characters of status
+\ bar cost more than a whole frame, which dropped the game to 25Hz and left
+\ the top lane's sprites redrawn after the beam had already passed them.
+\ So we plot characters ourselves out of the MOS font at &C000.
+\
+\ A MODE 5 character is 8 pixels wide: two CRTC cells, i.e. two bytes per
+\ pixel row. A font byte's high nybble is the left four pixels and its low
+\ nybble the right four, so each nybble becomes one MODE 5 byte via `expand`,
+\ a 16-entry table rebuilt whenever the colour changes.
+FONT = &C000                    \ MOS character definitions, 8 bytes from ' '
+
+\ A = logical colour 0-3
+.set_text_colour
+    STA txt_col
+    LDX #0
+.stc_loop
+    LDA #0: STA tmp0
+    LDA txt_col
+    AND #2
+    BEQ stc_nohi
+    TXA
+    ASL A: ASL A: ASL A: ASL A  \ the four pixels' high bits
+    STA tmp0
+.stc_nohi
+    LDA txt_col
+    AND #1
+    BEQ stc_nolo
+    TXA
+    ORA tmp0
+    STA tmp0
+.stc_nolo
+    LDA tmp0
+    STA expand,X
+    INX
+    CPX #16
+    BNE stc_loop
+    RTS
+
+\ Y = character row (0-31), column taken from txt_col_pos (0-19)
+.set_text_pos
+    TYA
+    TAX                         \ X = row for the rowbase lookup
+    LDA txt_col_pos
+    ASL A                       \ character column -> CRTC cell
+    TAY
+    LDA rowbase_lo,X
+    CLC: ADC colofs_lo,Y
+    STA txtp
+    LDA rowbase_hi,X
+    ADC colofs_hi,Y
+    STA txtp+1
+    LDA txtp: CLC: ADC #8: STA txtp2
+    LDA txtp+1: ADC #0: STA txtp2+1
+    RTS
+
+\ A = character. Plots it and steps on one character to the right.
+.draw_char
+    SEC: SBC #32
+    STA tmp0
+    LDA #0: STA tmp1
+    ASL tmp0: ROL tmp1
+    ASL tmp0: ROL tmp1
+    ASL tmp0: ROL tmp1          \ (char - 32) * 8
+    LDA tmp0: CLC: ADC #LO(FONT): STA fontp
+    LDA tmp1: ADC #HI(FONT): STA fontp+1
+    LDY #7
+.dch_row
+    LDA (fontp),Y
+    PHA
+    LSR A: LSR A: LSR A: LSR A
+    TAX
+    LDA expand,X
+    STA (txtp),Y
+    PLA
+    AND #15
+    TAX
+    LDA expand,X
+    STA (txtp2),Y
+    DEY
+    BPL dch_row
+    \ Next character is two cells (16 bytes) further on.
+    LDA txtp:  CLC: ADC #16: STA txtp
+    LDA txtp+1: ADC #0: STA txtp+1
+    LDA txtp2: CLC: ADC #16: STA txtp2
+    LDA txtp2+1: ADC #0: STA txtp2+1
+    RTS
+
+\ Plot the zero-terminated string at strp.
+.draw_string
+    LDY #0
+.dstr_loop
+    LDA (strp),Y
+    BEQ dstr_done
+    STY tmp2
+    JSR draw_char
+    LDY tmp2
+    INY
+    BNE dstr_loop
+.dstr_done
+    RTS
+
+\ Plot A as two BCD digits.
+.draw_bcd
+    PHA
+    LSR A: LSR A: LSR A: LSR A
+    CLC: ADC #'0'
+    JSR draw_char
+    PLA
+    AND #15
+    CLC: ADC #'0'
+    JMP draw_char
+
+\ ============================================================================
 \ Status bar and messages
 \ ============================================================================
 .draw_status
-    JSR hide_cursor
-    LDA #17: JSR OSWRCH
-    LDA #3:  JSR OSWRCH         \ highlight
-    LDA #31: JSR OSWRCH
-    LDA #0:  JSR OSWRCH
-    LDA #0:  JSR OSWRCH
+    LDA #COL_HI: JSR set_text_colour
+    LDA #0: STA txt_col_pos
+    LDY #0
+    JSR set_text_pos
     LDA #LO(txt_funding): STA strp
     LDA #HI(txt_funding): STA strp+1
-    JSR print_str
+    JSR draw_string
     LDX #2
 .ds_digits
+    STX tmp2
     LDA score,X
-    JSR print_bcd
+    JSR draw_bcd
+    LDX tmp2
     DEX
     BPL ds_digits
 
-    LDA #31: JSR OSWRCH
-    LDA #0:  JSR OSWRCH
-    LDA #1:  JSR OSWRCH
-    LDA #17: JSR OSWRCH
-    LDA #2:  JSR OSWRCH
+    LDA #COL_MID: JSR set_text_colour
+    LDA #0: STA txt_col_pos
+    LDY #1
+    JSR set_text_pos
     LDA #LO(txt_phd): STA strp
     LDA #HI(txt_phd): STA strp+1
-    JSR print_str
+    JSR draw_string
     LDA lives
     CLC: ADC #'0'
-    JSR OSWRCH
+    JSR draw_char
     LDA #LO(txt_rvw): STA strp
     LDA #HI(txt_rvw): STA strp+1
-    JSR print_str
+    JSR draw_string
     \ Eight characters of reviewer patience, filling as you dawdle.
     LDA review
     LSR A: LSR A: LSR A: LSR A
     LSR A                       \ 0..200 -> 0..6
     STA tmp0
+    STA last_bar
     LDX #0
 .ds_bar
     CPX tmp0
@@ -1326,7 +1618,9 @@ FLAG_QUIT      = 3
 .ds_empty
     LDA #'.'
 .ds_emit
-    JSR OSWRCH
+    STX tmp2
+    JSR draw_char
+    LDX tmp2
     INX
     CPX #7
     BNE ds_bar
@@ -1364,12 +1658,11 @@ FLAG_QUIT      = 3
 \ Print the string at strp on the message line.
 .show_msg
     JSR clear_msg
-    LDA #31: JSR OSWRCH
-    LDA #0:  JSR OSWRCH
-    LDA #30: JSR OSWRCH
-    LDA #17: JSR OSWRCH
-    LDA #1:  JSR OSWRCH
-    JSR print_str
+    LDA #COL_ACC: JSR set_text_colour
+    LDA #0: STA txt_col_pos
+    LDY #30
+    JSR set_text_pos
+    JSR draw_string
     RTS
 
 .clear_msg
@@ -1484,6 +1777,10 @@ NEXT
 .carry_sp_lo  SKIP 1
 .carry_sp_hi  SKIP 1
 .dc_timer     SKIP 1
+.last_bar     SKIP 1
+.txt_col      SKIP 1
+.txt_col_pos  SKIP 1
+.expand       SKIP 16
 .pl_scrp      SKIP 2
 .pl_subrow    SKIP 1
 .mv_scrp_lo   SKIP NMOVERS

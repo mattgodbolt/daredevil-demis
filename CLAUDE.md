@@ -38,6 +38,48 @@ Never assume a change worked. The loop is: `make`, run it in the emulator,
 Use `src/main_dbg.asm` (edit `SHOOT_NO` on line 1) to drop straight into one
 shoot without going through the front end.
 
+## Keep the OS out of the game loop
+
+This is the single biggest performance lesson here, and it cost a 25Hz game
+and a screenful of flicker before it was learned:
+
+- **`OSWRCH` is not usable per frame.** The status bar is about 35 characters;
+  drawn through `OSWRCH` in a graphics mode that is more than a whole frame's
+  worth of cycles. `draw_status` now plots characters itself out of the MOS
+  font at `&C000` (see `set_text_colour` / `draw_char` / `draw_string`).
+- **`OSBYTE 19` is not a vsync.** It goes through the OS's event dispatch and
+  does not return until the beam is already into the display, throwing away
+  the vertical border — the only part of the frame where it is safe to redraw.
+  The engine hooks `IRQ1V` itself (`install_irq`, `our_irq`, `wait_vsync`) and
+  counts vsyncs. A handler there may use A (the OS saved it at `&FC`) but must
+  leave X and Y alone.
+- **What is still OS, and why:** `read_keys` uses four `OSBYTE 129` calls,
+  measured at ~1311 cycles — ten scanlines, about 3% of a frame. That is a
+  fair price for not hand-rolling a keyboard matrix scan. `OSWORD 7` sound and
+  the front-end screens are outside the game loop and can stay as they are.
+
+## Racing the beam
+
+`screenshot` in the jsbeeb MCP returns a fully-painted frame, so a sprite
+missing from a screenshot really was missing from the display. Sprites are
+erased and redrawn in place, so if that happens while the beam is passing
+them, they are erased ahead of it and redrawn behind it — and never appear.
+
+The redraw costs about 82 scanlines. The vertical border after vsync is far
+shorter than that, so the work cannot simply be hidden there. Instead
+`wait_past_lane` delays until the beam is *below* the lane being redrawn, using
+the `lane_delay` table (in scanlines, per lane). Lanes 2 and 3 are already
+below the redraw window and wait for nothing. **If the redraw ever gets slower,
+those numbers need remeasuring.**
+
+To measure it, build with `RASTER_DEBUG = TRUE` (line 2 of `src/main_dbg.asm`):
+the screen floods with colour for exactly as long as the redraw takes, so the
+band's height is the cost. Set it back to `FALSE` before taking screenshots.
+
+Also note: **save every sprite's background before drawing any of them.** With
+save-then-draw per sprite, the second sprite saves the first one's pixels and
+smears a copy of it across the track on the next frame.
+
 ## Things that have already cost hours
 
 - **Sampling the emulator is phase-locked.** `run_for_cycles` with a multiple
@@ -62,6 +104,20 @@ shoot without going through the front end.
   absolute address is an assembly error, not a subtle bug — but it is easy to
   declare a pointer with `EQUW` out of habit.
 - **`LDY abs,Y` does not exist.** Nor do most `,Y` forms outside `LDX`/`STX`.
+- **A beebasm macro must not be named after an opcode or directive.**
+  `SAVE_CELL` is parsed as the `SAVE` directive and `STASH_CELL` as
+  `STA SH_CELL`; both fail with a bare "Symbol not defined" pointing at the
+  invocation. `DRAW_CELL`, `GRAB_CELL`, `WRITE_CELL` are fine.
+- **beebasm sizes operands on the first pass**, so a forward-referenced label
+  reads as zero page and shifts everything after it. Self-modifying code must
+  therefore put the patching routine *after* the labels it patches.
+- **A per-frame test that is cheap can still be wrong.** `review AND 7` looked
+  like "every eighth frame", but `review` sits at 0 whenever the rider is
+  moving, so it was true *every* frame — and dragged the whole game to 25Hz.
+- **Sample the emulator off the frame boundary.** A BBC frame is 312 lines x
+  64us = **39936** cycles at 2MHz, not 40000. Stepping by 40000 drifts 64
+  cycles a frame; stepping by exactly 39936 samples the identical point in the
+  game loop every time, which can hide or fake a flicker bug.
 
 ## Level design rules
 

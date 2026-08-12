@@ -112,11 +112,69 @@ source of truth, not patched in place.
 5. **Ask the autopilot for a passing run before considering a feature done.**
    It was written late, as a debugging aid. It should have been the definition
    of done from the start.
-6. **Measure or omit.** Any figure that appears in a summary should come from a
+6. **Test in the medium of the artefact.** A game is a sequence of frames, so
+   the default check should have been a frame sequence, not a screenshot. Ask
+   early what class of defect the current tooling *cannot* see.
+7. **On unfamiliar hardware, measure the cost before optimising the code.** A
+   raster bar existed the whole time and would have shown the 21000-cycle
+   redraw the first time a sprite looked wrong.
+8. **Measure or omit.** Any figure that appears in a summary should come from a
    command whose output is in the transcript. If it cannot be measured cheaply,
    say "several" rather than inventing a number that reads better. Applied
    consistently this costs nothing, because the measurement is usually one
    `ls --time-style` away.
+
+## The flicker, or: shipping something I had never actually watched
+
+The game was pushed, documented and declared done while the rider was invisible
+about two thirds of the time on the top lane, and the whole thing ran at half
+speed. Matt spotted it immediately — "I think there's something to fix" — from
+the one thing I had never done: watch it run.
+
+Every check up to that point had been a **single screenshot**. A single frame
+cannot show flicker; flicker is a property of a *sequence*. So the tooling had
+been systematically blind to an entire class of defect, and no amount of
+squinting at `shots/auto_final.png` would ever have found it. The fix was to
+capture one PNG per emulated frame (`tools/frames.mjs`, and `--capture` in the
+autopilot) and diff them.
+
+What that turned up, in order:
+
+1. **The game was running at 25Hz.** The rider advanced 0.61 pixels a frame
+   against a 1.25 cap — the arithmetic said the loop was taking two frames.
+   The cause was `LDA review / AND #7 / BNE` guarding the status-bar redraw:
+   it reads as "every eighth frame", but `review` is 0 whenever you are
+   moving, so it was true *every* frame, and a status bar drawn through
+   `OSWRCH` costs more than a whole frame.
+2. **Capping how often that ran was the wrong fix.** Matt's nudge — "typically
+   games would not use OS routines for performance critical code" — was the
+   real answer. `OSWRCH` came out entirely, replaced by plotting characters
+   from the MOS font at `&C000`.
+3. **`OSBYTE 19` is not a vsync either.** It returns after the OS's event
+   dispatch, by which time the beam is into the display and the vertical
+   border — the only safe time to redraw — has gone. Hooking `IRQ1V` and
+   counting vsyncs is what a game would do, and is what it does now.
+4. **The blitter was twice as slow as it needed to be.** The rolled-up inner
+   loop cost ~45 cycles a byte; unrolling one character row at a time and
+   patching the operands once per sprite took the redraw from 21000 cycles to
+   about 10500.
+5. **Even then it did not fit.** The redraw is ~82 scanlines and the border
+   is shorter, so the answer was not to fit it in but to move it: wait for the
+   beam to drop *below* the lane being redrawn. Lanes 2 and 3 never needed to
+   wait at all.
+
+The instrument that made all of this tractable was a **raster bar** — flood the
+palette at the start of the sprite work and restore it at the end, and the
+height of the coloured band *is* the cost, in scanlines, on screen. Two
+screenshots then measure a change: 21000 cycles down to 10500. That is the
+oldest trick on the machine and it beat every amount of reasoning about cycle
+counts I did beforehand, all of which was wrong by a factor of two.
+
+The general lesson is not "test more". It is that **the shape of your test
+determines the class of bug you can find at all.** Static screenshots find
+static bugs. A game is a sequence, and until the tooling produced sequences,
+this defect was invisible by construction — and I had been confidently
+reporting the game as working.
 
 ## A note on testing what you cannot reach
 
@@ -156,4 +214,7 @@ Timings are from file timestamps, not memory.
 | Disc image | 12.5K |
 | Screenshots and screen dumps captured | 46, all headless |
 | Real bugs found by the autopilot | 3 |
+| Redraw cost, before and after | 21000 -> ~10500 cycles |
+| Game loop, before and after | 25Hz -> 50Hz |
+| Top-lane frames with the rider painted | ~33% -> 100% |
 | Longest single detour (the palette, the aliasing, the non-bug) | ~3 minutes each |

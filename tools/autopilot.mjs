@@ -7,8 +7,8 @@
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { readFileSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { resolve, dirname } from "path";
 
 // Talk to the published jsbeeb MCP server by default; point JSBEEB_MCP at a
 // local server.js to test against a working copy.
@@ -40,12 +40,21 @@ const call = async (n, a) => {
 
 const disc = resolve(process.argv[2] || "build/demis.ssd");
 const maxFrames = parseInt(process.argv[3] || "2000");
+// Optional: --capture <fromFrame> <toFrame> <dir> to save one PNG per frame.
+const capIdx = process.argv.indexOf("--capture");
+const capFrom = capIdx > 0 ? parseInt(process.argv[capIdx + 1]) : Infinity;
+const capTo = capIdx > 0 ? parseInt(process.argv[capIdx + 2]) : -1;
+const capDir = capIdx > 0 ? process.argv[capIdx + 3] : "";
+const capLog = [];
 const { session_id } = JSON.parse(text(await call("create_machine", { model: "B-DFS1.2" })));
 await call("boot_disc", { session_id, image_path: disc });
+const FRAME = 39936;
 const run = (s) => call("run_for_cycles", { session_id, cycles: Math.max(1, Math.round(s * 2e6)) });
+const runFrame = () => call("run_for_cycles", { session_id, cycles: FRAME });
 const peek = async (a, n = 1) =>
     JSON.parse(text(await call("read_memory", { session_id, address: a, length: n }))).bytes;
 const snap = async (f) => {
+    mkdirSync(dirname(resolve(f)), { recursive: true });
     const img = image(await call("screenshot", { session_id, active_only: true }));
     writeFileSync(f, Buffer.from(img.data, "base64"));
     console.log("SHOT", f);
@@ -128,12 +137,29 @@ for (let f = 0; f < maxFrames; f++) {
     }
     if (want && !jumpHeld) { await call("key_down", { session_id, key: "SPACE" }); jumpHeld = true; }
     else if (!want && jumpHeld) { await call("key_up", { session_id, key: "SPACE" }); jumpHeld = false; }
-    await run(0.02);
+    await runFrame();
+    if (f >= capFrom && f < capTo) {
+        const tag = String(f).padStart(3, "0");
+        await snap(`${capDir}/f${tag}.png`);
+        // Record where the game thinks everything is, so the capture can be
+        // checked against what the beam actually painted.
+        const [px2] = await peek(sym.px_hi);
+        const [py2] = await peek(sym.py_hi);
+        const [lane2] = await peek(sym.lane);
+        capLog.push({ f, px: px2, py: py2, lane: lane2, air: airborne });
+        if (process.env.DUMPMEM) {
+            const bytes = [];
+            for (let a = 0x5800; a < 0x8000; a += 256)
+                bytes.push(...JSON.parse(text(await call("read_memory", { session_id, address: a, length: 256 }))).bytes);
+            writeFileSync(`${capDir}/f${tag}.bin`, Buffer.from(bytes));
+        }
+    }
     if (lives === 0) { console.log(`frame ${f}: OUT OF RESEARCHERS`); break; }
 }
 const [s0, s1, s2] = await peek(sym.score, 3);
 console.log("score  $" + [s2, s1, s0].map((b) => b.toString(16).padStart(2, "0")).join(""));
 console.log("crashes", crashes, " lanes reached", [...seen].sort().join(" "));
+if (capLog.length) writeFileSync(`${capDir}/frames.json`, JSON.stringify(capLog, null, 1));
 await snap("shots/auto_final.png");
 await run(4.0);                      // let the game-over screen come up
 await snap("shots/auto_end.png");

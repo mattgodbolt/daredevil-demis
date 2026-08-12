@@ -1,3 +1,4 @@
+RASTER_DEBUG = FALSE
 \ ============================================================================
 \ DAREDEVIL DEMIS
 \ A spoof of Daredevil Dennis (Visions Software, 1984) for the BBC Micro.
