@@ -1826,3 +1826,4 @@ PRINT "SYM mv_active", ~mv_active
 PRINT "SYM mv_type", ~mv_type
 PRINT "SYM mv_cell", ~mv_cell
 PRINT "SYM mv_phase", ~mv_phase
+PRINT "SYM vsync_count", ~vsync_count

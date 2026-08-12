@@ -65,8 +65,9 @@ missing from a screenshot really was missing from the display. Sprites are
 erased and redrawn in place, so if that happens while the beam is passing
 them, they are erased ahead of it and redrawn behind it — and never appear.
 
-The redraw costs about 82 scanlines. The vertical border after vsync is far
-shorter than that, so the work cannot simply be hidden there. Instead
+The redraw costs about 82 scanlines. The vertical border after vsync is only
+about **16 scanlines** — two character rows — measured with `tools/border.asm`,
+so the work cannot possibly be hidden there. Instead
 `wait_past_lane` delays until the beam is *below* the lane being redrawn, using
 the `lane_delay` table (in scanlines, per lane). Lanes 2 and 3 are already
 below the redraw window and wait for nothing. **If the redraw ever gets slower,
@@ -115,7 +116,8 @@ smears a copy of it across the track on the next frame.
   like "every eighth frame", but `review` sits at 0 whenever the rider is
   moving, so it was true *every* frame — and dragged the whole game to 25Hz.
 - **Sample the emulator off the frame boundary.** A BBC frame is 312 lines x
-  64us = **39936** cycles at 2MHz, not 40000. Stepping by 40000 drifts 64
+  64us = **39936** cycles at 2MHz, not 40000 (confirmed by
+  `node tools/framelen.mjs`: 7987200 cycles = exactly 200 vsyncs). Stepping by 40000 drifts 64
   cycles a frame; stepping by exactly 39936 samples the identical point in the
   game loop every time, which can hide or fake a flicker bug.
 
