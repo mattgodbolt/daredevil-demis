@@ -48,7 +48,7 @@ const capDir = capIdx > 0 ? process.argv[capIdx + 3] : "";
 const capLog = [];
 const { session_id } = JSON.parse(text(await call("create_machine", { model: "B-DFS1.2" })));
 await call("boot_disc", { session_id, image_path: disc });
-const FRAME = 39936;
+const FRAME = 40000;         // 312.5 scanlines: the BBC interlaces by default
 const run = (s) => call("run_for_cycles", { session_id, cycles: Math.max(1, Math.round(s * 2e6)) });
 const runFrame = () => call("run_for_cycles", { session_id, cycles: FRAME });
 const peek = async (a, n = 1) =>

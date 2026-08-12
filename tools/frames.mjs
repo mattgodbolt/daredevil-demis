@@ -1,7 +1,8 @@
 /**
  * Capture one screenshot per emulated frame, so a sequence can be flicked
- * through or diffed.  A BBC frame is 312 scanlines x 64us = 19968us, i.e.
- * 39936 cycles at 2MHz -- NOT 40000, which drifts by 64 cycles a frame.
+ * through or diffed.  The BBC interlaces by default, so a field is 312.5
+ * scanlines: exactly 40000 cycles at 2MHz, exactly 50Hz. (Turn interlace off
+ * with *TV 0,1 and you get 312 whole lines = 39936 cycles = 50.08Hz.)
  *
  *   node tools/frames.mjs <disc.ssd> <settle-secs> <n-frames> <out-dir> [keys]
  *   keys: comma list of KEY:downFrame:upFrame, e.g. "X:0:999,SPACE:40:44"
@@ -14,7 +15,7 @@ import { resolve } from "path";
 const MCP = process.env.JSBEEB_MCP
     ? { command: "node", args: [process.env.JSBEEB_MCP] }
     : { command: "npx", args: ["-y", "jsbeeb-mcp"] };
-const FRAME = 39936;
+const FRAME = 40000;
 
 const text = (r) => r.content.find((c) => c.type === "text")?.text ?? "";
 const image = (r) => r.content.find((c) => c.type === "image");

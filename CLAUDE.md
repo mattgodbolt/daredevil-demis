@@ -84,7 +84,7 @@ smears a copy of it across the track on the next frame.
 ## Things that have already cost hours
 
 - **Sampling the emulator is phase-locked.** `run_for_cycles` with a multiple
-  of 40000 always lands at the same point in the game's frame. If a sprite
+  of the frame length always lands at the same point in the game's frame. If a sprite
   looks missing, it is probably the erase-and-redraw window — sample at an odd
   offset (`0.204` rather than `0.2`) before believing the bug is real.
 - **`VDU 19`, never `&FE21`.** In a four-colour mode each logical colour owns
@@ -115,9 +115,15 @@ smears a copy of it across the track on the next frame.
 - **A per-frame test that is cheap can still be wrong.** `review AND 7` looked
   like "every eighth frame", but `review` sits at 0 whenever the rider is
   moving, so it was true *every* frame — and dragged the whole game to 25Hz.
-- **Sample the emulator off the frame boundary.** A BBC frame is 312 lines x
-  64us = **39936** cycles at 2MHz, not 40000 (confirmed by
-  `node tools/framelen.mjs`: 7987200 cycles = exactly 200 vsyncs). Stepping by 40000 drifts 64
+- **A frame is 40000 cycles.** The BBC interlaces by default, so a field is
+  312.5 scanlines: 312.5 x 128 = 40000 cycles at 2MHz, i.e. exactly 50.00Hz.
+  Turn interlace off (`*TV 0,1`) and you get 312 whole lines = 39936 cycles =
+  50.08Hz. Measure it with `node tools/frametime.mjs`, which times 500 vsync
+  waits against the OS's 100Hz clock (1 centisecond = 20000 cycles exactly) --
+  it reports both cases. Do NOT try to confirm this by counting vsyncs over a
+  couple of hundred frames: 39936 and 40000 are only 0.16% apart, so a short
+  window cannot tell them apart and will happily "confirm" whichever you
+  expected. Stepping by 40000 drifts 64
   cycles a frame; stepping by exactly 39936 samples the identical point in the
   game loop every time, which can hide or fake a flicker bug.
 

@@ -118,6 +118,17 @@ source of truth, not patched in place.
 7. **On unfamiliar hardware, measure the cost before optimising the code.** A
    raster bar existed the whole time and would have shown the 21000-cycle
    redraw the first time a sprite looked wrong.
+8. **Check that a measurement can actually discriminate.** Asked why a frame
+   is 39936 cycles rather than the obvious 2MHz/50Hz = 40000, I produced a
+   confident derivation (312 scanlines x 128) and a "confirmation" from the
+   emulator. Both were wrong. The BBC *interlaces* by default, so a field is
+   312.5 lines and a frame is exactly 40000 cycles -- 39936 is what you get
+   only after `*TV 0,1`. The derivation was of a real number, just not the
+   machine's default one; and the confirmation was worthless because 39936 and
+   40000 differ by 0.16%, so counting vsyncs over 200 frames cannot separate
+   them and returned the answer I expected. Timing 500 frames against the OS's
+   100Hz clock separates them immediately. Before running a check, ask what
+   result would *falsify* the claim -- if nothing would, it is not a test.
 8. **Measure or omit.** Any figure that appears in a summary should come from a
    command whose output is in the transcript. If it cannot be measured cheaply,
    say "several" rather than inventing a number that reads better. Applied
