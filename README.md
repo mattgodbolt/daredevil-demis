@@ -155,6 +155,11 @@ src/main.asm       build file
 src/main_dbg.asm   drops straight into one shoot, for testing
 ```
 
+## Licence
+
+Everything in this repository is MIT licensed (see [LICENSE](LICENSE)). *Daredevil
+Dennis* itself, which this spoofs, is Visions Software's; see Credits.
+
 ## Credits
 
 Original *Daredevil Dennis* by Visions Software, 1984 — the four-platform
